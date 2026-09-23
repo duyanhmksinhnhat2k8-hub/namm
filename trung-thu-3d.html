@@ -1,0 +1,277 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Trung Thu 3D · Hoa anh đào</title>
+<link href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;600&family=Lora:ital,wght@1,500&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#0b1030;--card:rgba(20,18,50,.82);--ink:#fff3dc;--gold:#ffc857;--pink:#ff9ec4;--red:#e0433a;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+*{box-sizing:border-box}
+html,body{height:100%;margin:0;background:var(--bg);color:var(--ink);font-family:'Be Vietnam Pro',system-ui,sans-serif;overflow:hidden}
+canvas#c{position:fixed;inset:0;width:100%;height:100%;display:block;touch-action:none}
+#title{position:fixed;top:calc(env(safe-area-inset-top,0px) + 14px);left:0;right:0;text-align:center;pointer-events:none}
+#title h1{margin:0;font:italic 500 clamp(22px,5vw,38px) Lora,serif;color:var(--gold);text-shadow:0 0 18px rgba(255,200,87,.5)}
+#msg{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(env(safe-area-inset-bottom,0px) + 78px);width:min(92vw,560px);max-height:26vh;overflow:auto;padding:14px 18px;background:var(--card);border:1px solid rgba(255,200,87,.35);border-radius:14px;line-height:1.6;white-space:pre-wrap;word-break:break-word;display:none}
+#bar{position:fixed;left:0;right:0;bottom:calc(env(safe-area-inset-bottom,0px) + 12px);display:flex;gap:10px;justify-content:center}
+button{font:600 15px 'Be Vietnam Pro',sans-serif;border:0;border-radius:999px;padding:12px 20px;cursor:pointer;color:#2a1200;background:var(--gold)}
+button.alt{background:var(--card);color:var(--ink);border:1px solid rgba(255,200,87,.45)}
+button:focus-visible,textarea:focus-visible{outline:3px solid var(--pink);outline-offset:2px}
+#panel{position:fixed;inset:0;background:rgba(5,6,24,.72);display:none;align-items:center;justify-content:center;padding:16px}
+#panel.open{display:flex}
+.box{width:min(94vw,460px);max-height:92vh;overflow:auto;background:#151338;border:1px solid rgba(255,200,87,.4);border-radius:16px;padding:18px}
+.box h2{margin:0 0 10px;font-size:18px;color:var(--gold)}
+textarea{width:100%;height:150px;resize:vertical;border-radius:10px;border:1px solid rgba(255,255,255,.25);background:#0d0c28;color:var(--ink);padding:10px;font:400 15px/1.5 'Be Vietnam Pro',sans-serif}
+.row{display:flex;justify-content:space-between;align-items:center;margin:8px 0;font-size:13px;opacity:.85}
+#qr{display:flex;justify-content:center;margin:12px 0}
+#qr>div{background:#fff;padding:10px;border-radius:10px}
+#err{color:#ff8a80;font-size:13px;min-height:18px}
+@media (prefers-reduced-motion:reduce){*{scroll-behavior:auto}}
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="title"><h1>Trung Thu an lành</h1></div>
+<div id="msg"></div>
+<div id="bar">
+  <button id="write">✍ Viết lời chúc</button>
+  <button id="music" class="alt">♪ Bật nhạc</button>
+</div>
+<div id="panel" role="dialog" aria-label="Viết lời chúc">
+  <div class="box">
+    <h2>Lời chúc Trung Thu</h2>
+    <textarea id="txt" maxlength="800" placeholder="Viết lời chúc dài tuỳ ý (tối đa 800 ký tự)..."></textarea>
+    <div class="row"><span id="cnt">0 / 800</span><span>Quét mã QR để mở lời chúc</span></div>
+    <label for="site" style="font-size:13px;opacity:.85">Địa chỉ trang web riêng của bạn (mã QR sẽ mở trang này)</label>
+    <input id="site" type="url" inputmode="url" placeholder="https://ten-ban.github.io/trung-thu/" style="width:100%;margin:6px 0 4px;padding:10px;border-radius:10px;border:1px solid rgba(255,255,255,.25);background:#0d0c28;color:var(--ink);font:400 14px 'Be Vietnam Pro',sans-serif">
+    <div id="err"></div>
+    <div id="qr"></div>
+    <div style="display:flex;gap:10px;justify-content:flex-end">
+      <button class="alt" id="close">Đóng</button>
+      <button id="gen">Tạo mã QR</button>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+<script>
+(function(){
+const $=id=>document.getElementById(id);
+const canvas=$('c');
+const renderer=new THREE.WebGLRenderer({canvas,antialias:true});
+renderer.setPixelRatio(Math.min(devicePixelRatio,2));
+const scene=new THREE.Scene();
+scene.background=new THREE.Color(0x0b1030);
+scene.fog=new THREE.FogExp2(0x0b1030,0.018);
+const cam=new THREE.PerspectiveCamera(55,1,0.1,200);
+function resize(){renderer.setSize(innerWidth,innerHeight,false);cam.aspect=innerWidth/innerHeight;cam.updateProjectionMatrix()}
+addEventListener('resize',resize);resize();
+
+scene.add(new THREE.AmbientLight(0x6a6fb0,0.8));
+const moonLight=new THREE.PointLight(0xffe7a8,1.4,80);moonLight.position.set(-14,16,-22);scene.add(moonLight);
+
+// Circle sprite texture
+function dot(c1,c2){const s=64,cv=document.createElement('canvas');cv.width=cv.height=s;const g=cv.getContext('2d');const gr=g.createRadialGradient(32,32,2,32,32,30);gr.addColorStop(0,c1);gr.addColorStop(1,c2);g.fillStyle=gr;g.beginPath();g.arc(32,32,30,0,7);g.fill();return new THREE.CanvasTexture(cv)}
+
+// Moon with glow
+const moon=new THREE.Mesh(new THREE.SphereGeometry(5,40,40),new THREE.MeshBasicMaterial({color:0xffe8a3}));
+moon.position.set(-14,16,-40);scene.add(moon);
+const halo=new THREE.Sprite(new THREE.SpriteMaterial({map:dot('rgba(255,220,130,.55)','rgba(255,220,130,0)'),transparent:true,depthWrite:false}));
+halo.scale.set(30,30,1);halo.position.copy(moon.position);scene.add(halo);
+
+// Stars
+const sp=[];for(let i=0;i<500;i++){const r=90,a=Math.random()*6.28,b=Math.random()*1.3+.1;sp.push(Math.cos(a)*r*Math.cos(b),Math.sin(b)*r,Math.sin(a)*r*Math.cos(b)-10)}
+const sg=new THREE.BufferGeometry();sg.setAttribute('position',new THREE.Float32BufferAttribute(sp,3));
+scene.add(new THREE.Points(sg,new THREE.PointsMaterial({size:1.2,color:0xffffff,sizeAttenuation:false,fog:false})));
+
+// Ground
+const ground=new THREE.Mesh(new THREE.CircleGeometry(30,64),new THREE.MeshLambertMaterial({color:0x1c2a4a}));
+ground.rotation.x=-Math.PI/2;scene.add(ground);
+
+// Cherry tree
+const tree=new THREE.Group();scene.add(tree);
+const bark=new THREE.MeshLambertMaterial({color:0x4a2f28});
+const blossomPts=[];
+function seg(a,b,r1,r2){
+  const d=new THREE.Vector3().subVectors(b,a),L=d.length();
+  const m=new THREE.Mesh(new THREE.CylinderGeometry(r2,r1,L,7),bark);
+  m.position.copy(a).addScaledVector(d,.5);
+  m.quaternion.setFromUnitVectors(new THREE.Vector3(0,1,0),d.clone().normalize());
+  tree.add(m);
+}
+function branch(p,dir,len,r,depth){
+  const e=p.clone().addScaledVector(dir,len);
+  seg(p,e,r,r*.72);
+  if(depth<=0||len<.5){
+    for(let i=0;i<26;i++)blossomPts.push(e.x+(Math.random()-.5)*2.6,e.y+(Math.random()-.5)*2.2,e.z+(Math.random()-.5)*2.6);
+    return;
+  }
+  const n=depth>2?2:3;
+  for(let i=0;i<n;i++){
+    const nd=dir.clone();
+    nd.x+=(Math.random()-.5)*1.1;nd.z+=(Math.random()-.5)*1.1;nd.y+=(Math.random()-.35)*.4;
+    nd.normalize();
+    branch(e,nd,len*.76,r*.7,depth-1);
+  }
+  if(depth<=3)for(let i=0;i<10;i++)blossomPts.push(e.x+(Math.random()-.5)*2,e.y+(Math.random()-.5)*1.6,e.z+(Math.random()-.5)*2);
+}
+branch(new THREE.Vector3(0,0,0),new THREE.Vector3(0,1,0),3.6,.55,5);
+const bg=new THREE.BufferGeometry();bg.setAttribute('position',new THREE.Float32BufferAttribute(blossomPts,3));
+const blossoms=new THREE.Points(bg,new THREE.PointsMaterial({size:.55,map:dot('#ffd3e4','rgba(255,158,196,0)'),transparent:true,depthWrite:false,color:0xffffff}));
+tree.add(blossoms);
+
+// Falling petals
+const N=260,pp=new Float32Array(N*3),pv=[];
+for(let i=0;i<N;i++){pp[i*3]=(Math.random()-.5)*16;pp[i*3+1]=Math.random()*12;pp[i*3+2]=(Math.random()-.5)*16;pv.push(Math.random()*.02+.01)}
+const pg=new THREE.BufferGeometry();pg.setAttribute('position',new THREE.BufferAttribute(pp,3));
+scene.add(new THREE.Points(pg,new THREE.PointsMaterial({size:.28,map:dot('#ffffff','rgba(255,170,205,0)'),transparent:true,depthWrite:false})));
+
+// Lanterns
+const lanterns=[];
+for(let i=0;i<7;i++){
+  const g=new THREE.Group();
+  const col=i%2?0xe0433a:0xffb03b;
+  g.add(new THREE.Mesh(new THREE.CylinderGeometry(.5,.5,.8,8),new THREE.MeshBasicMaterial({color:col})));
+  const cap=new THREE.MeshBasicMaterial({color:0xffd66b});
+  const t=new THREE.Mesh(new THREE.CylinderGeometry(.35,.5,.12,8),cap);t.position.y=.46;g.add(t);
+  const b=t.clone();b.position.y=-.46;g.add(b);
+  const gl=new THREE.Sprite(new THREE.SpriteMaterial({map:dot('rgba(255,190,90,.6)','rgba(255,190,90,0)'),transparent:true,depthWrite:false}));
+  gl.scale.set(3.2,3.2,1);g.add(gl);
+  const a=i/7*6.28+.4,r=5.5+(i%3)*1.6;
+  g.position.set(Math.cos(a)*r,2.2+(i%4)*.9,Math.sin(a)*r);
+  g.userData={y:g.position.y,ph:Math.random()*6};
+  scene.add(g);lanterns.push(g);
+}
+
+// Pond
+const pond=new THREE.Mesh(new THREE.CircleGeometry(4.2,48),new THREE.MeshPhongMaterial({color:0x1d4f7a,emissive:0x0a2a4a,shininess:120,specular:0xffe7a8}));
+pond.rotation.x=-Math.PI/2;pond.scale.set(1.3,1,.8);pond.position.set(3,.03,6.5);scene.add(pond);
+const shore=new THREE.Mesh(new THREE.RingGeometry(4.2,4.8,48),new THREE.MeshLambertMaterial({color:0x3a4a5a}));
+shore.rotation.x=-Math.PI/2;shore.scale.copy(pond.scale);shore.position.set(3,.025,6.5);scene.add(shore);
+const refl=new THREE.Sprite(new THREE.SpriteMaterial({map:dot('rgba(255,225,140,.7)','rgba(255,225,140,0)'),transparent:true,depthWrite:false}));
+refl.scale.set(6,3,1);refl.position.set(3,.1,6.5);scene.add(refl);
+const ripples=[];
+for(let i=0;i<3;i++){
+  const r=new THREE.Mesh(new THREE.RingGeometry(.9,1,40),new THREE.MeshBasicMaterial({color:0xcfe8ff,transparent:true,opacity:0,side:THREE.DoubleSide}));
+  r.rotation.x=-Math.PI/2;r.position.set(3+(i-1)*1.8,.06,6.5+(i%2)*.6);r.userData.ph=i*2.1;scene.add(r);ripples.push(r);
+}
+// Lily pads
+for(let i=0;i<5;i++){
+  const p=new THREE.Mesh(new THREE.CircleGeometry(.5,16,0,5.6),new THREE.MeshLambertMaterial({color:0x3f9b62,side:THREE.DoubleSide}));
+  p.rotation.x=-Math.PI/2;p.position.set(3+Math.cos(i*1.3)*3.2,.07,6.5+Math.sin(i*1.3)*1.6);scene.add(p);
+}
+
+// Jade rabbit
+const jade=new THREE.MeshPhongMaterial({color:0xa6ecd0,emissive:0x1d5c47,shininess:90});
+const rabbit=new THREE.Group();
+const rb=new THREE.Mesh(new THREE.SphereGeometry(.8,24,20),jade);rb.scale.set(1,1.15,1.05);rb.position.y=.9;rabbit.add(rb);
+const rh=new THREE.Mesh(new THREE.SphereGeometry(.55,24,20),jade);rh.position.set(0,1.95,.25);rabbit.add(rh);
+const ears=[];
+[-.22,.22].forEach(x=>{
+  const e=new THREE.Mesh(new THREE.CylinderGeometry(.11,.17,1.2,10),jade);
+  e.position.set(x,2.85,.15);e.rotation.z=x>0?-.18:.18;rabbit.add(e);ears.push(e);
+});
+[-.2,.2].forEach(x=>{
+  const eye=new THREE.Mesh(new THREE.SphereGeometry(.07,10,10),new THREE.MeshBasicMaterial({color:0xd8322b}));
+  eye.position.set(x,2.05,.75);rabbit.add(eye);
+});
+const nose=new THREE.Mesh(new THREE.SphereGeometry(.06,8,8),new THREE.MeshBasicMaterial({color:0xff8fa8}));nose.position.set(0,1.9,.8);rabbit.add(nose);
+const tail=new THREE.Mesh(new THREE.SphereGeometry(.28,12,12),new THREE.MeshLambertMaterial({color:0xffffff}));tail.position.set(0,.6,-.85);rabbit.add(tail);
+[-.4,.4].forEach(x=>{const f=new THREE.Mesh(new THREE.SphereGeometry(.28,12,10),jade);f.scale.set(1,.6,1.5);f.position.set(x,.2,.55);rabbit.add(f)});
+// Small moon cake held in front
+const cake=new THREE.Mesh(new THREE.CylinderGeometry(.32,.32,.16,20),new THREE.MeshLambertMaterial({color:0xd9993d}));cake.position.set(0,.9,.95);cake.rotation.x=1.2;rabbit.add(cake);
+const rg=new THREE.Sprite(new THREE.SpriteMaterial({map:dot('rgba(140,255,210,.5)','rgba(140,255,210,0)'),transparent:true,depthWrite:false}));
+rg.scale.set(5,5,1);rg.position.y=1.6;rabbit.add(rg);
+rabbit.position.set(-3.6,0,4.2);rabbit.rotation.y=.6;rabbit.scale.setScalar(1.1);scene.add(rabbit);
+
+// Camera orbit
+let az=.6,el=.22,dist=17,drag=false,lx=0,ly=0,auto=true;
+canvas.addEventListener('pointerdown',e=>{drag=true;auto=false;lx=e.clientX;ly=e.clientY;canvas.setPointerCapture(e.pointerId)});
+canvas.addEventListener('pointerup',()=>{drag=false;setTimeout(()=>{if(!drag)auto=true},2500)});
+canvas.addEventListener('pointermove',e=>{if(!drag)return;az-=(e.clientX-lx)*.006;el=Math.max(.02,Math.min(1.2,el+(e.clientY-ly)*.004));lx=e.clientX;ly=e.clientY});
+canvas.addEventListener('wheel',e=>{dist=Math.max(8,Math.min(30,dist+e.deltaY*.01))},{passive:true});
+
+const reduce=matchMedia('(prefers-reduced-motion:reduce)').matches;
+const clock=new THREE.Clock();
+(function loop(){
+  requestAnimationFrame(loop);
+  const t=clock.getElapsedTime();
+  if(auto&&!reduce)az+=.0025;
+  cam.position.set(Math.sin(az)*Math.cos(el)*dist,Math.sin(el)*dist+4,Math.cos(az)*Math.cos(el)*dist);
+  cam.lookAt(0,5,0);
+  const a=pg.attributes.position;
+  for(let i=0;i<N;i++){
+    let y=a.getY(i)-pv[i];
+    a.setX(i,a.getX(i)+Math.sin(t+i)*.006);
+    if(y<0)y=12;a.setY(i,y);
+  }
+  a.needsUpdate=true;
+  lanterns.forEach(l=>{l.position.y=l.userData.y+Math.sin(t*.9+l.userData.ph)*.35;l.rotation.y=t*.3});
+  halo.material.opacity=.85+Math.sin(t*1.2)*.1;
+  ripples.forEach(r=>{const k=((t*.35+r.userData.ph)%3)/3;r.scale.setScalar(.6+k*2.2);r.material.opacity=.5*(1-k)});
+  rabbit.position.y=Math.max(0,Math.sin(t*2.2))*.25;
+  ears[0].rotation.z=.18+Math.sin(t*3)*.08;ears[1].rotation.z=-.18-Math.sin(t*3+1)*.08;
+  renderer.render(scene,cam);
+})();
+
+// ---- Music (Web Audio, gentle pentatonic loop) ----
+let ac=null,playing=false,timer=null,step=0;
+const notes=[392,440,523.25,587.33,659.25,784,659.25,587.33,523.25,440,392,329.63];
+const bass=[196,196,220,220,262,262,220,220];
+function tone(f,t,d,type,v){
+  const o=ac.createOscillator(),g=ac.createGain();
+  o.type=type;o.frequency.value=f;
+  g.gain.setValueAtTime(0,t);g.gain.linearRampToValueAtTime(v,t+.03);g.gain.exponentialRampToValueAtTime(.0001,t+d);
+  o.connect(g);g.connect(ac.destination);o.start(t);o.stop(t+d+.05);
+}
+function tick(){
+  const t=ac.currentTime+.05;
+  tone(notes[step%notes.length],t,1.1,'triangle',.14);
+  if(step%2===0)tone(bass[(step/2)%bass.length],t,1.8,'sine',.1);
+  step++;
+}
+$('music').onclick=()=>{
+  if(!ac)ac=new (window.AudioContext||window.webkitAudioContext)();
+  if(ac.state==='suspended')ac.resume();
+  playing=!playing;
+  if(playing){tick();timer=setInterval(tick,520);$('music').textContent='♪ Tắt nhạc'}
+  else{clearInterval(timer);$('music').textContent='♪ Bật nhạc'}
+};
+
+// ---- Message + QR ----
+const txt=$('txt'),err=$('err');
+function enc(s){return btoa(unescape(encodeURIComponent(s)))}
+function dec(s){return decodeURIComponent(escape(atob(s)))}
+function showMsg(s){const m=$('msg');m.textContent=s;m.style.display=s?'block':'none'}
+txt.addEventListener('input',()=>{$('cnt').textContent=txt.value.length+' / 800'});
+$('write').onclick=()=>{$('panel').classList.add('open');txt.focus()};
+$('close').onclick=()=>$('panel').classList.remove('open');
+$('gen').onclick=()=>{
+  err.textContent='';$('qr').innerHTML='';
+  const s=txt.value.trim();
+  if(!s){err.textContent='Hãy nhập lời chúc trước.';return}
+  let base=$('site').value.trim();
+  const own=!/claude\.ai|claudeusercontent|anthropic/i.test(location.href);
+  if(!base&&own)base=location.href.split('#')[0];
+  if(!/^https?:\/\//i.test(base)){err.textContent='Hãy dán địa chỉ trang web riêng của bạn (bước đưa file lên host) vào ô phía trên.';return}
+  base=base.split('#')[0];
+  try{localStorage.setItem('tt_site',base)}catch(e){}
+  const url=base+'#m='+enc(s);
+  try{
+    new QRCode($('qr'),{text:url,width:240,height:240,colorDark:'#2a0f2e',colorLight:'#ffffff',correctLevel:QRCode.CorrectLevel.L});
+    showMsg(s);
+  }catch(e){
+    err.textContent='Nội dung quá dài cho một mã QR. Hãy rút ngắn bớt lời chúc.';
+  }
+};
+try{const s=localStorage.getItem('tt_site');if(s)$('site').value=s}catch(e){}
+// Open greeting from a scanned QR
+try{
+  const h=location.hash;
+  if(h.indexOf('#m=')===0){showMsg(dec(h.slice(3)))}
+}catch(e){}
+})();
+</script>
+</body>
+</html>
